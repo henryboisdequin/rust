@@ -428,12 +428,29 @@ impl<'a: 'ast, 'ast> LateResolutionVisitor<'a, '_, 'ast> {
                     }
                 }
 
-                err.span_suggestion(
-                    call_span,
-                    &format!("try calling `{}` as a method", ident),
-                    format!("self.{}({})", path_str, args_snippet),
-                    Applicability::MachineApplicable,
-                );
+                if source.is_call() {
+                    match res {
+                        Some(val) => {
+                            self.smart_resolve_context_dependent_help(
+                                &mut err,
+                                span,
+                                source,
+                                val,
+                                &path_str,
+                                &fallback_label,
+                            );
+                        }
+                        None => {}
+                    }
+                } else {
+                    err.span_suggestion(
+                        call_span,
+                        &format!("try calling `{}` as a method", ident),
+                        format!("self.{}({})", path_str, args_snippet),
+                        Applicability::MachineApplicable,
+                    );
+                }
+
                 return (err, candidates);
             }
         }
@@ -1659,12 +1676,15 @@ impl<'tcx> LifetimeContext<'_, 'tcx> {
             match missing {
                 MissingLifetimeSpot::Generics(generics) => {
                     let (span, sugg) = if let Some(param) = generics.params.iter().find(|p| {
-                        !matches!(p.kind, hir::GenericParamKind::Type {
-                            synthetic: Some(hir::SyntheticTyParamKind::ImplTrait),
-                            ..
-                        } | hir::GenericParamKind::Lifetime {
-                            kind: hir::LifetimeParamKind::Elided,
-                        })
+                        !matches!(
+                            p.kind,
+                            hir::GenericParamKind::Type {
+                                synthetic: Some(hir::SyntheticTyParamKind::ImplTrait),
+                                ..
+                            } | hir::GenericParamKind::Lifetime {
+                                kind: hir::LifetimeParamKind::Elided,
+                            }
+                        )
                     }) {
                         (param.span.shrink_to_lo(), format!("{}, ", lifetime_ref))
                     } else {
@@ -1844,10 +1864,13 @@ impl<'tcx> LifetimeContext<'_, 'tcx> {
                         msg = "consider introducing a named lifetime parameter".to_string();
                         should_break = true;
                         if let Some(param) = generics.params.iter().find(|p| {
-                            !matches!(p.kind, hir::GenericParamKind::Type {
-                                synthetic: Some(hir::SyntheticTyParamKind::ImplTrait),
-                                ..
-                            })
+                            !matches!(
+                                p.kind,
+                                hir::GenericParamKind::Type {
+                                    synthetic: Some(hir::SyntheticTyParamKind::ImplTrait),
+                                    ..
+                                }
+                            )
                         }) {
                             (param.span.shrink_to_lo(), "'a, ".to_string())
                         } else {
