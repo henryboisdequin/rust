@@ -4,12 +4,14 @@ mod some_module {
 
 use some_module::Test;
 
-struct TestBuilder;
+struct TestBuilder<T> {
+    something: T,
+}
 
-impl TestBuilder {
-    fn build(self) -> Test {
-        Test(self) 
-        // ^~ERROR cannot initialize a tuple struct which contains private fields
+impl<T> TestBuilder<T> {
+    fn build(self) -> Test<T> {
+        Test(self)
+        //~^ ERROR cannot initialize a tuple struct which contains private fields
     }
 }
 
