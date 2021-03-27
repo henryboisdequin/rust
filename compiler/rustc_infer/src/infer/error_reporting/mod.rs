@@ -63,11 +63,12 @@ use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::{Item, ItemKind, Node};
+use rustc_middle::hir::map::Map;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::{
     self,
     subst::{Subst, SubstsRef},
-    Region, Ty, TyCtxt, TypeFoldable,
+    Region, Ty, TyCtxt, TypeFoldable, TypeckResults,
 };
 use rustc_span::{sym, BytePos, DesugaringKind, Pos, Span};
 use rustc_target::spec::abi;
@@ -2299,6 +2300,90 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     pub fn is_try_conversion(&self, span: Span, trait_def_id: DefId) -> bool {
         span.is_desugaring(DesugaringKind::QuestionMark)
             && self.tcx.is_diagnostic_item(sym::from_trait, trait_def_id)
+    }
+
+    /// Determine whether an error associated with the given span and definition
+    /// should be treated as being caused by not implementing the `Future` trait.
+    /// If this is a function call, check if it's an `async` function and if not,
+    /// recommend turning the function `async`. Returns whether this function
+    /// suggested turning the *awaited* function an `async` function.
+    ///
+    /// ```rust
+    /// fn foo() {} // suggest to make `foo` `async`
+    ///
+    /// async fn bar() {
+    ///     foo.await;
+    /// }
+    /// ```
+    pub fn suggest_async_fn(
+        &self,
+        err: &mut DiagnosticBuilder<'tcx>,
+        span: Span,
+        trait_def_id: DefId,
+    ) -> bool {
+        let desugaring_kind = span.desugaring_kind().unwrap_or_else(|| {
+            return false;
+        });
+
+        if let DesugaringKind::Await(hir_id) = desugaring_kind {
+            let is_future = span.is_desugaring(desugaring_kind)
+                && self.tcx.is_diagnostic_item(sym::future_trait, trait_def_id);
+            let await_span = self.tcx.hir().span(hir_id);
+
+            // Check whether the failure is from not implementing the `Future` trait
+            // and if the `span` given is a `DesugaringKind::Await` `span`.
+            if is_future && span == await_span {
+                let expr = self.tcx.hir().expect_expr(hir_id);
+                // Check whether this is a function call.
+                if let hir::ExprKind::Call(qpath, _) = expr.kind {
+                    let initial_res = TypeckResults::new(match hir_id.expect_owner() {
+                        Some(local_def_id) => local_def_id,
+                        None => return false,
+                    });
+                    let res = initial_res.qpath_res(qpath, hir_id);
+                    // Get the definition of the function being called.
+                    let def_id = match res.opt_def_id() {
+                        Some(def_id) => def_id,
+                        None => return false,
+                    };
+                    // Check if the `awaited` function is `async`.
+                    let asyncness = self.tcx.asyncness(def_id);
+                    match asyncness {
+                        hir::IsAsync::Async => {
+                            // This function is an `async` function and we should not suggest
+                            // making it `async`.
+                            return false;
+                        }
+                        hir::IsAync::NotAsync => {
+                            let name = self.tcx.item_name(def_id).to_ident_string();
+                            let ident_args = self.tcx.fn_arg_names(def_id);
+                            let mut args = Vec::new();
+
+                            for arg in ident_args {
+                                args.append(arg.as_str().string);
+                            }
+
+                            // Suggest making the *awaited* function `async`.
+                            err.span_suggestion(
+                                // TODO: this is the span of `foo().await`
+                                // TODO: need span of `fn foo`
+                                await_span,
+                                format!("consider *awaiting* function `{}`", name),
+                                format!("async fn {}({}) {", name, args.join(",")),
+                                Applicability::MachineApplicable,
+                            );
+                            return true;
+                        }
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
     }
 }
 

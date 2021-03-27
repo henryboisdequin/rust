@@ -53,7 +53,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // Instead, stop here so that the `if`- or `while`-expression's block is linted instead.
             if !span.is_desugaring(DesugaringKind::CondTemporary)
                 && !span.is_desugaring(DesugaringKind::Async)
-                && !orig_span.is_desugaring(DesugaringKind::Await)
+                && !orig_span.is_desugaring(DesugaringKind::Await(id))
             {
                 self.diverges.set(Diverges::WarnedAlways);
 
@@ -274,10 +274,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         let autoborrow_mut = adj.iter().any(|adj| {
-            matches!(adj, &Adjustment {
-                kind: Adjust::Borrow(AutoBorrow::Ref(_, AutoBorrowMutability::Mut { .. })),
-                ..
-            })
+            matches!(
+                adj,
+                &Adjustment {
+                    kind: Adjust::Borrow(AutoBorrow::Ref(_, AutoBorrowMutability::Mut { .. })),
+                    ..
+                }
+            )
         });
 
         match self.typeck_results.borrow_mut().adjustments_mut().entry(expr.hir_id) {

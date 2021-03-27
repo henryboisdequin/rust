@@ -32,6 +32,7 @@ use crate::{Span, DUMMY_SP};
 use crate::def_id::{CrateNum, DefId, CRATE_DEF_INDEX, LOCAL_CRATE};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_data_structures::sync::{Lock, Lrc};
+use rustc_hir::hir_id::HirId;
 use rustc_macros::HashStable_Generic;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
@@ -899,7 +900,7 @@ pub enum DesugaringKind {
     /// `impl Trait` with `Foo`.
     OpaqueTy,
     Async,
-    Await,
+    Await(HirId),
     ForLoop(ForLoopLoc),
 }
 
@@ -916,7 +917,7 @@ impl DesugaringKind {
         match self {
             DesugaringKind::CondTemporary => "`if` or `while` condition",
             DesugaringKind::Async => "`async` block or function",
-            DesugaringKind::Await => "`await` expression",
+            DesugaringKind::Await(_) => "`await` expression",
             DesugaringKind::QuestionMark => "operator `?`",
             DesugaringKind::TryBlock => "`try` block",
             DesugaringKind::OpaqueTy => "`impl Trait`",

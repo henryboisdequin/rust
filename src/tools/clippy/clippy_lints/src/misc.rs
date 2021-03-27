@@ -3,8 +3,8 @@ use rustc_ast::ast::LitKind;
 use rustc_errors::Applicability;
 use rustc_hir::intravisit::FnKind;
 use rustc_hir::{
-    self as hir, def, BinOpKind, BindingAnnotation, Body, Expr, ExprKind, FnDecl, HirId, Mutability, PatKind, Stmt,
-    StmtKind, TyKind, UnOp,
+    self as hir, def, BinOpKind, BindingAnnotation, Body, Expr, ExprKind, FnDecl, HirId,
+    Mutability, PatKind, Stmt, StmtKind, TyKind, UnOp,
 };
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_middle::lint::in_external_macro;
@@ -16,9 +16,10 @@ use rustc_span::source_map::{ExpnKind, Span};
 use crate::consts::{constant, Constant};
 use crate::utils::sugg::Sugg;
 use crate::utils::{
-    get_item_name, get_parent_expr, higher, implements_trait, in_constant, is_integer_const, iter_input_pats,
-    last_path_segment, match_qpath, match_trait_method, paths, snippet, snippet_opt, span_lint, span_lint_and_sugg,
-    span_lint_and_then, span_lint_hir_and_then, unsext, SpanlessEq,
+    get_item_name, get_parent_expr, higher, implements_trait, in_constant, is_integer_const,
+    iter_input_pats, last_path_segment, match_qpath, match_trait_method, paths, snippet,
+    snippet_opt, span_lint, span_lint_and_sugg, span_lint_and_then, span_lint_hir_and_then, unsext,
+    SpanlessEq,
 };
 
 declare_clippy_lint! {
@@ -286,7 +287,9 @@ impl<'tcx> LateLintPass<'tcx> for MiscLints {
             return;
         }
         for arg in iter_input_pats(decl, body) {
-            if let PatKind::Binding(BindingAnnotation::Ref | BindingAnnotation::RefMut, ..) = arg.pat.kind {
+            if let PatKind::Binding(BindingAnnotation::Ref | BindingAnnotation::RefMut, ..) =
+                arg.pat.kind
+            {
                 span_lint(
                     cx,
                     TOPLEVEL_REF_ARG,
@@ -379,14 +382,16 @@ impl<'tcx> LateLintPass<'tcx> for MiscLints {
             ExprKind::Cast(ref e, ref ty) => {
                 check_cast(cx, expr.span, e, ty);
                 return;
-            },
+            }
             ExprKind::Binary(ref cmp, ref left, ref right) => {
                 check_binary(cx, expr, cmp, left, right);
                 return;
-            },
-            _ => {},
+            }
+            _ => {}
         }
-        if in_attributes_expansion(expr) || expr.span.is_desugaring(DesugaringKind::Await) {
+        if in_attributes_expansion(expr)
+            || expr.span.is_desugaring(DesugaringKind::Await(expr.hir_id))
+        {
             // Don't lint things expanded by #[derive(...)], etc or `await` desugaring
             return;
         }
@@ -404,15 +409,11 @@ impl<'tcx> LateLintPass<'tcx> for MiscLints {
                 } else {
                     None
                 }
-            },
+            }
             ExprKind::Field(_, ident) => {
                 let name = ident.as_str();
-                if name.starts_with('_') && !name.starts_with("__") {
-                    Some(name)
-                } else {
-                    None
-                }
-            },
+                if name.starts_with('_') && !name.starts_with("__") { Some(name) } else { None }
+            }
             _ => None,
         };
         if let Some(binding) = binding {
@@ -479,11 +480,7 @@ fn check_nan(cx: &LateContext<'_>, expr: &Expr<'_>, cmp_expr: &Expr<'_>) {
 }
 
 fn is_named_constant<'tcx>(cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) -> bool {
-    if let Some((_, res)) = constant(cx, cx.typeck_results(), expr) {
-        res
-    } else {
-        false
-    }
+    if let Some((_, res)) = constant(cx, cx.typeck_results(), expr) { res } else { false }
 }
 
 fn is_allowed<'tcx>(cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) -> bool {
@@ -545,7 +542,11 @@ fn check_to_owned(cx: &LateContext<'_>, expr: &Expr<'_>, other: &Expr<'_>, left:
         }
     }
 
-    fn symmetric_partial_eq<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>, other: Ty<'tcx>) -> Option<EqImpl> {
+    fn symmetric_partial_eq<'tcx>(
+        cx: &LateContext<'tcx>,
+        ty: Ty<'tcx>,
+        other: Ty<'tcx>,
+    ) -> Option<EqImpl> {
         cx.tcx.lang_items().eq_trait().map(|def_id| EqImpl {
             ty_eq_other: implements_trait(cx, ty, def_id, &[other.into()]),
             other_eq_ty: implements_trait(cx, other, def_id, &[ty.into()]),
@@ -554,15 +555,19 @@ fn check_to_owned(cx: &LateContext<'_>, expr: &Expr<'_>, other: &Expr<'_>, left:
 
     let (arg_ty, snip) = match expr.kind {
         ExprKind::MethodCall(.., ref args, _) if args.len() == 1 => {
-            if match_trait_method(cx, expr, &paths::TO_STRING) || match_trait_method(cx, expr, &paths::TO_OWNED) {
+            if match_trait_method(cx, expr, &paths::TO_STRING)
+                || match_trait_method(cx, expr, &paths::TO_OWNED)
+            {
                 (cx.typeck_results().expr_ty(&args[0]), snippet(cx, args[0].span, ".."))
             } else {
                 return;
             }
-        },
+        }
         ExprKind::Call(ref path, ref v) if v.len() == 1 => {
             if let ExprKind::Path(ref path) = path.kind {
-                if match_qpath(path, &["String", "from_str"]) || match_qpath(path, &["String", "from"]) {
+                if match_qpath(path, &["String", "from_str"])
+                    || match_qpath(path, &["String", "from"])
+                {
                     (cx.typeck_results().expr_ty(&v[0]), snippet(cx, v[0].span, ".."))
                 } else {
                     return;
@@ -570,7 +575,7 @@ fn check_to_owned(cx: &LateContext<'_>, expr: &Expr<'_>, other: &Expr<'_>, left:
             } else {
                 return;
             }
-        },
+        }
         _ => return,
     };
 
@@ -588,11 +593,7 @@ fn check_to_owned(cx: &LateContext<'_>, expr: &Expr<'_>, other: &Expr<'_>, left:
 
     let other_gets_derefed = matches!(other.kind, ExprKind::Unary(UnOp::UnDeref, _));
 
-    let lint_span = if other_gets_derefed {
-        expr.span.to(other.span)
-    } else {
-        expr.span
-    };
+    let lint_span = if other_gets_derefed { expr.span.to(other.span) } else { expr.span };
 
     span_lint_and_then(
         cx,
@@ -645,7 +646,9 @@ fn check_to_owned(cx: &LateContext<'_>, expr: &Expr<'_>, other: &Expr<'_>, left:
 /// of what it means for an expression to be "used".
 fn is_used(cx: &LateContext<'_>, expr: &Expr<'_>) -> bool {
     get_parent_expr(cx, expr).map_or(true, |parent| match parent.kind {
-        ExprKind::Assign(_, ref rhs, _) | ExprKind::AssignOp(_, _, ref rhs) => SpanlessEq::new(cx).eq_expr(rhs, expr),
+        ExprKind::Assign(_, ref rhs, _) | ExprKind::AssignOp(_, _, ref rhs) => {
+            SpanlessEq::new(cx).eq_expr(rhs, expr)
+        }
         _ => is_used(cx, parent),
     })
 }
@@ -664,11 +667,7 @@ fn in_attributes_expansion(expr: &Expr<'_>) -> bool {
 
 /// Tests whether `res` is a variable defined outside a macro.
 fn non_macro_local(cx: &LateContext<'_>, res: def::Res) -> bool {
-    if let def::Res::Local(id) = res {
-        !cx.tcx.hir().span(id).from_expansion()
-    } else {
-        false
-    }
+    if let def::Res::Local(id) = res { !cx.tcx.hir().span(id).from_expansion() } else { false }
 }
 
 fn check_cast(cx: &LateContext<'_>, span: Span, e: &Expr<'_>, ty: &hir::Ty<'_>) {
@@ -722,7 +721,12 @@ fn check_binary(
 
         if let Some(name) = get_item_name(cx, expr) {
             let name = name.as_str();
-            if name == "eq" || name == "ne" || name == "is_nan" || name.starts_with("eq_") || name.ends_with("_eq") {
+            if name == "eq"
+                || name == "ne"
+                || name == "is_nan"
+                || name.starts_with("eq_")
+                || name.ends_with("_eq")
+            {
                 return;
             }
         }
